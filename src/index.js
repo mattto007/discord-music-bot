@@ -2,13 +2,26 @@ import "dotenv/config";
 import { Client, GatewayIntentBits } from "discord.js";
 import { handlePanelCommand, handleInteractions, restoreSavedPanels } from "./panel.js";
 
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
-client.on("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  await restoreSavedPanels(client);
+
+  try {
+    await restoreSavedPanels(client);
+  } catch (e) {
+    console.error("Failed to restore saved panels:", e);
+  }
 });
 
 client.on("interactionCreate", async (interaction) => {
@@ -26,9 +39,11 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.isRepliable()) {
       const msg = `Error: ${e?.message ?? e}`;
+
       if (interaction.deferred || interaction.replied) {
         return interaction.followUp({ content: msg, ephemeral: true }).catch(() => {});
       }
+
       return interaction.reply({ content: msg, ephemeral: true }).catch(() => {});
     }
   }

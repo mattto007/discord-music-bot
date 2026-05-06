@@ -41,17 +41,16 @@ export function getGuildState(guildId) {
 }
 
 export function setPanelMessage(guildId, message) {
-  const state = getGuildState(guildId);
-  state.panelMessage = message;
+  getGuildState(guildId).panelMessage = message;
 }
 
 export function setPanelUpdater(guildId, fn) {
-  const state = getGuildState(guildId);
-  state.panelUpdater = fn;
+  getGuildState(guildId).panelUpdater = fn;
 }
 
 export async function refreshPanel(guildId) {
   const state = getGuildState(guildId);
+
   if (typeof state.panelUpdater === "function") {
     try {
       await state.panelUpdater();
@@ -80,7 +79,22 @@ export async function ensureConnectionFromInteraction(interaction) {
     });
 
     state.connection.subscribe(state.player);
-    await entersState(state.connection, VoiceConnectionStatus.Ready, 15000);
+
+    try {
+      await entersState(state.connection, VoiceConnectionStatus.Ready, 30000);
+    } catch (e) {
+      console.error("Voice connection failed:", e);
+
+      try {
+        state.connection.destroy();
+      } catch {}
+
+      state.connection = null;
+
+      throw new Error(
+        "Could not connect to the voice channel. Check Discord voice permissions or VM outbound UDP/network."
+      );
+    }
   }
 
   return state;
@@ -91,6 +105,7 @@ export function setQueue(guildId, items) {
   state.queue = items.slice();
   state.history = [];
   state.now = null;
+  state.recordCurrentOnNext = true;
   refreshPanel(guildId).catch(console.error);
 }
 
@@ -158,14 +173,19 @@ export function leave(guildId) {
   state.queue = [];
   state.history = [];
   state.now = null;
+  state.recordCurrentOnNext = true;
 
   if (state.killPipeline) {
-    try { state.killPipeline(); } catch {}
+    try {
+      state.killPipeline();
+    } catch {}
     state.killPipeline = null;
   }
 
   if (state.connection) {
-    try { state.connection.destroy(); } catch {}
+    try {
+      state.connection.destroy();
+    } catch {}
     state.connection = null;
   }
 
@@ -176,13 +196,16 @@ async function playNext(guildId) {
   const state = getGuildState(guildId);
 
   if (state.killPipeline) {
-    try { state.killPipeline(); } catch {}
+    try {
+      state.killPipeline();
+    } catch {}
     state.killPipeline = null;
   }
 
   if (state.now && state.recordCurrentOnNext !== false) {
     state.history.push(state.now);
   }
+
   state.recordCurrentOnNext = true;
 
   const next = state.queue.shift();
