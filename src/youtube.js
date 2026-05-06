@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
 import { createAudioResource } from "@discordjs/voice";
 
+const YTDLP_BIN = "/usr/local/bin/yt-dlp";
+const FFMPEG_BIN = "ffmpeg";
+
 function stopProcess(proc) {
-  if (!proc.killed) {
+  if (proc && !proc.killed) {
     proc.kill("SIGKILL");
   }
 }
@@ -13,6 +16,7 @@ function isAllowedYouTubeUrl(raw) {
     if (!["http:", "https:"].includes(url.protocol)) return false;
 
     const host = url.hostname.toLowerCase();
+
     return (
       host === "youtu.be" ||
       host === "youtube.com" ||
@@ -28,12 +32,14 @@ export function createYouTubeAudioResource(url, volume = 0.6) {
     throw new Error("Only YouTube URLs are supported.");
   }
 
-  const ytdlp = spawn("yt-dlp", ["--no-playlist", "-f", "bestaudio/best", "-o", "-", url], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const ytdlp = spawn(
+    YTDLP_BIN,
+    ["--no-playlist", "-f", "bestaudio/best", "-o", "-", url],
+    { stdio: ["ignore", "pipe", "pipe"] }
+  );
 
   const ffmpeg = spawn(
-    "ffmpeg",
+    FFMPEG_BIN,
     [
       "-i", "pipe:0",
       "-analyzeduration", "0",
@@ -64,7 +70,9 @@ export function createYouTubeAudioResource(url, volume = 0.6) {
 
   ytdlp.on("error", (err) => {
     console.error("[yt-dlp] failed to start:", err);
-    try { ffmpeg.stdin.destroy(err); } catch {}
+    try {
+      ffmpeg.stdin.destroy(err);
+    } catch {}
     stopProcess(ffmpeg);
   });
 
@@ -76,7 +84,9 @@ export function createYouTubeAudioResource(url, volume = 0.6) {
   ytdlp.on("close", (code) => {
     if (code !== 0 && code !== null) {
       console.error(`[yt-dlp] exited with code ${code}`);
-      try { ffmpeg.stdin.destroy(); } catch {}
+      try {
+        ffmpeg.stdin.destroy();
+      } catch {}
     }
   });
 
@@ -86,15 +96,28 @@ export function createYouTubeAudioResource(url, volume = 0.6) {
     }
   });
 
-  ytdlp.stderr.on("data", (d) => console.error("[yt-dlp]", d.toString()));
-  ffmpeg.stderr.on("data", (d) => console.error("[ffmpeg]", d.toString()));
+  ytdlp.stderr.on("data", (d) => {
+    console.error("[yt-dlp]", d.toString());
+  });
 
-  const resource = createAudioResource(ffmpeg.stdout, { inlineVolume: true });
+  ffmpeg.stderr.on("data", (d) => {
+    console.error("[ffmpeg]", d.toString());
+  });
+
+  const resource = createAudioResource(ffmpeg.stdout, {
+    inlineVolume: true,
+  });
+
   resource.volume?.setVolume(volume);
 
   const kill = () => {
-    try { stopProcess(ytdlp); } catch {}
-    try { stopProcess(ffmpeg); } catch {}
+    try {
+      stopProcess(ytdlp);
+    } catch {}
+
+    try {
+      stopProcess(ffmpeg);
+    } catch {}
   };
 
   return { resource, kill };
@@ -106,9 +129,11 @@ export async function fetchYouTubeTitle(url) {
   }
 
   return await new Promise((resolve) => {
-    const proc = spawn("yt-dlp", ["--get-title", "--no-playlist", url], {
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const proc = spawn(
+      YTDLP_BIN,
+      ["--get-title", "--no-playlist", url],
+      { stdio: ["ignore", "pipe", "ignore"] }
+    );
 
     let stdout = "";
     let settled = false;
@@ -121,7 +146,9 @@ export async function fetchYouTubeTitle(url) {
     };
 
     const timeout = setTimeout(() => {
-      try { stopProcess(proc); } catch {}
+      try {
+        stopProcess(proc);
+      } catch {}
       finish(null);
     }, 30000);
 
@@ -129,7 +156,9 @@ export async function fetchYouTubeTitle(url) {
       stdout += d.toString();
     });
 
-    proc.stdout.on("error", () => finish(null));
+    proc.stdout.on("error", () => {
+      finish(null);
+    });
 
     proc.on("close", (code) => {
       if (code === 0) {
@@ -140,6 +169,8 @@ export async function fetchYouTubeTitle(url) {
       }
     });
 
-    proc.on("error", () => finish(null));
+    proc.on("error", () => {
+      finish(null);
+    });
   });
 }
