@@ -15,6 +15,7 @@ import {
   addTrack,
   getPlaylist,
   listTracksByPlaylistId,
+  listGuildPanels,
   upsertGuildPanel,
 } from "./db.js";
 import {
@@ -133,6 +134,22 @@ async function updatePanelMessage(guildId) {
   });
 }
 
+export async function restoreSavedPanels(client) {
+  for (const panel of listGuildPanels()) {
+    try {
+      const channel = await client.channels.fetch(panel.channel_id);
+      if (!channel?.isTextBased()) continue;
+
+      const message = await channel.messages.fetch(panel.message_id);
+      setPanelMessage(panel.guild_id, message);
+      setPanelUpdater(panel.guild_id, () => updatePanelMessage(panel.guild_id));
+      await updatePanelMessage(panel.guild_id);
+    } catch (e) {
+      console.error(`Failed to restore panel for guild ${panel.guild_id}:`, e);
+    }
+  }
+}
+
 export async function handlePanelCommand(interaction) {
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
     return interaction.reply({
@@ -212,6 +229,22 @@ function toPlaylistQueueItems(ownerTag, ownerId, playlistName, tracks) {
   }));
 }
 
+function isAllowedYouTubeUrl(raw) {
+  try {
+    const url = new URL(raw);
+    if (!["http:", "https:"].includes(url.protocol)) return false;
+
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "youtu.be" ||
+      host === "youtube.com" ||
+      host.endsWith(".youtube.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function replyEphemeral(interaction, content, components = []) {
   if (interaction.deferred || interaction.replied) {
     return interaction.followUp({ content, ephemeral: true, components });
@@ -251,6 +284,9 @@ export async function handleInteractions(interaction) {
 
     if (id === IDS.PAUSE) {
       const mode = togglePause(interaction.guildId);
+      if (mode === "idle") {
+        return replyEphemeral(interaction, "Nothing is playing.");
+      }
       return replyEphemeral(interaction, mode === "paused" ? "⏸️ Paused." : "▶️ Resumed.");
     }
 
@@ -346,22 +382,23 @@ export async function handleInteractions(interaction) {
       const playlist = interaction.fields.getTextInputValue("playlist").trim();
       const url = interaction.fields.getTextInputValue("url").trim();
 
-      if (!/^https?:\/\//i.test(url)) {
-        return interaction.reply({ content: "Please paste a valid URL.", ephemeral: true });
+      if (!isAllowedYouTubeUrl(url)) {
+        return interaction.reply({ content: "Please paste a YouTube URL.", ephemeral: true });
       }
+
+      await interaction.deferReply({ ephemeral: true });
 
       try {
         const title = await fetchYouTubeTitle(url);
         addTrack(interaction.user.id, playlist, url, title);
-        return interaction.reply({
+        return interaction.editReply({
           content: `✅ Added track to **${playlist}**${title ? `: **${title}**` : ""}.`,
-          ephemeral: true,
         });
       } catch (e) {
         if (e?.message === "PLAYLIST_NOT_FOUND") {
-          return interaction.reply({ content: "Playlist not found (must be yours).", ephemeral: true });
+          return interaction.editReply({ content: "Playlist not found (must be yours)." });
         }
-        return interaction.reply({ content: "Failed to add track.", ephemeral: true });
+        return interaction.editReply({ content: "Failed to add track." });
       }
     }
 

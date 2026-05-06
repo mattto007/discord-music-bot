@@ -105,3 +105,7 @@ export function upsertGuildPanel(guildId, channelId, messageId) {
 export function getGuildPanel(guildId) {
   return db.prepare(`SELECT * FROM guild_panels WHERE guild_id=?`).get(guildId);
 }
+
+export function listGuildPanels() {
+  return db.prepare(`SELECT * FROM guild_panels`).all();
+}

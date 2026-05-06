@@ -1,13 +1,14 @@
 import "dotenv/config";
 import { Client, GatewayIntentBits } from "discord.js";
-import { handlePanelCommand, handleInteractions } from "./panel.js";
+import { handlePanelCommand, handleInteractions, restoreSavedPanels } from "./panel.js";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
-client.on("ready", () => {
+client.on("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  await restoreSavedPanels(client);
 });
 
 client.on("interactionCreate", async (interaction) => {

@@ -20,6 +20,7 @@ export function getGuildState(guildId) {
       history: [],
       now: null,
       killPipeline: null,
+      recordCurrentOnNext: true,
       panelMessage: null,
       panelUpdater: null,
     };
@@ -95,12 +96,13 @@ export function setQueue(guildId, items) {
 
 export function play(guildId) {
   const state = getGuildState(guildId);
+  state.recordCurrentOnNext = true;
   state.player.stop(true);
 }
 
 export function skip(guildId) {
   const state = getGuildState(guildId);
-  if (state.now) state.history.push(state.now);
+  state.recordCurrentOnNext = true;
   state.player.stop(true);
   refreshPanel(guildId).catch(console.error);
 }
@@ -113,6 +115,7 @@ export function previous(guildId) {
 
   const prev = state.history.pop();
   state.queue.unshift(prev);
+  state.recordCurrentOnNext = false;
   state.player.stop(true);
   refreshPanel(guildId).catch(console.error);
   return true;
@@ -123,6 +126,7 @@ export function replay(guildId) {
   if (!state.now) return false;
 
   state.queue.unshift({ ...state.now });
+  state.recordCurrentOnNext = false;
   state.player.stop(true);
   refreshPanel(guildId).catch(console.error);
   return true;
@@ -132,10 +136,15 @@ export function togglePause(guildId) {
   const state = getGuildState(guildId);
   const status = state.player.state.status;
 
-  if (status === "playing") {
+  if (status === AudioPlayerStatus.Playing) {
     state.player.pause();
     refreshPanel(guildId).catch(console.error);
     return "paused";
+  }
+
+  if (status !== AudioPlayerStatus.Paused) {
+    refreshPanel(guildId).catch(console.error);
+    return "idle";
   }
 
   state.player.unpause();
@@ -171,6 +180,11 @@ async function playNext(guildId) {
     state.killPipeline = null;
   }
 
+  if (state.now && state.recordCurrentOnNext !== false) {
+    state.history.push(state.now);
+  }
+  state.recordCurrentOnNext = true;
+
   const next = state.queue.shift();
   state.now = next || null;
 
@@ -179,9 +193,17 @@ async function playNext(guildId) {
     return;
   }
 
-  const { resource, kill } = createYouTubeAudioResource(next.url);
-  state.killPipeline = kill;
-  state.player.play(resource);
+  try {
+    const { resource, kill } = createYouTubeAudioResource(next.url);
+    state.killPipeline = kill;
+    state.player.play(resource);
+  } catch (e) {
+    console.error("Failed to create audio resource:", e);
+    state.now = null;
+    state.recordCurrentOnNext = false;
+    await refreshPanel(guildId);
+    return playNext(guildId);
+  }
 
   await refreshPanel(guildId);
 }
