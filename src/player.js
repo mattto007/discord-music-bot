@@ -61,11 +61,17 @@ export async function refreshPanel(guildId) {
 }
 
 export async function ensureConnectionFromInteraction(interaction) {
-  const member = interaction.member;
+  const guild = interaction.guild;
+
+  if (!guild) {
+    throw new Error("This only works inside a Discord server.");
+  }
+
+  const member = await guild.members.fetch(interaction.user.id);
   const voiceChannel = member?.voice?.channel;
 
   if (!voiceChannel) {
-    throw new Error("You must be in a voice channel.");
+    throw new Error("You must be in a server voice channel before clicking Join/Play.");
   }
 
   const state = getGuildState(interaction.guildId);
@@ -74,7 +80,7 @@ export async function ensureConnectionFromInteraction(interaction) {
     state.connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: interaction.guildId,
-      adapterCreator: interaction.guild.voiceAdapterCreator,
+      adapterCreator: guild.voiceAdapterCreator,
       selfDeaf: true,
     });
 
@@ -92,7 +98,7 @@ export async function ensureConnectionFromInteraction(interaction) {
       state.connection = null;
 
       throw new Error(
-        "Could not connect to the voice channel. Check Discord voice permissions or VM outbound UDP/network."
+        "Could not connect to the voice channel. Check bot permissions or VM outbound UDP/network."
       );
     }
   }
@@ -124,26 +130,36 @@ export function skip(guildId) {
 
 export function previous(guildId) {
   const state = getGuildState(guildId);
-  if (!state.history.length) return false;
 
-  if (state.now) state.queue.unshift(state.now);
+  if (!state.history.length) {
+    return false;
+  }
+
+  if (state.now) {
+    state.queue.unshift(state.now);
+  }
 
   const prev = state.history.pop();
   state.queue.unshift(prev);
   state.recordCurrentOnNext = false;
   state.player.stop(true);
   refreshPanel(guildId).catch(console.error);
+
   return true;
 }
 
 export function replay(guildId) {
   const state = getGuildState(guildId);
-  if (!state.now) return false;
+
+  if (!state.now) {
+    return false;
+  }
 
   state.queue.unshift({ ...state.now });
   state.recordCurrentOnNext = false;
   state.player.stop(true);
   refreshPanel(guildId).catch(console.error);
+
   return true;
 }
 
