@@ -143,6 +143,12 @@ export function play(guildId) {
   const state = getGuildState(guildId);
   state.recordCurrentOnNext = true;
   console.log("Play requested");
+
+  if (state.player.state.status === AudioPlayerStatus.Idle) {
+    playNext(guildId).catch(console.error);
+    return;
+  }
+
   state.player.stop(true);
 }
 
